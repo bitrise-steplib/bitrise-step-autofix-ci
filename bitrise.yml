@@ -1,0 +1,20 @@
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+format_version: "11"
+
+include:
+- repository: steps-check
+  branch: master
+  path: steps.bitrise.yml
+
+workflows:
+  # check: included from steps-check/steps.bitrise.yml
+
+  e2e:
+    steps:
+    - git::https://github.com/bitrise-steplib/steps-check.git:
+        inputs:
+        - workflow: e2e
+
+  generate_readme:
+    steps:
+    - git::https://github.com/bitrise-steplib/steps-readme-generator.git@main: {}

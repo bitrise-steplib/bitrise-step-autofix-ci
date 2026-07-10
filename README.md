@@ -1,142 +1,93 @@
 # Autofix CI
 
-Commits and pushes any local file changes made by previous steps, then fails the build so the current (unfixed) commit doesn't pass CI.
+[![Step changelog](https://shields.io/github/v/release/bitrise-steplib/bitrise-step-autofix-ci?include_prereleases&label=changelog&color=blueviolet)](https://github.com/bitrise-steplib/bitrise-step-autofix-ci/releases)
 
-Inspired by [autofix.ci](https://autofix.ci/) for GitHub Actions.
+Commits and pushes any local file changes made by previous steps, then fails the build to trigger a fresh run.
 
-![Demo screenshot](./docs/demo.png)
+<details>
+<summary>Description</summary>
 
-## Overview
+Autofix CI detects uncommitted file changes left by previous steps (e.g. code formatters, linters with auto-fix, code generators) and automatically commits and pushes them back to the source branch. Inspired by [autofix.ci](https://autofix.ci/) for GitHub Actions.
 
-Many CI workflows run tools that modify files as a side effect: code formatters, linters with auto-fix, code generators, lockfile updaters, and so on. Normally these changes are lost when the build finishes, requiring a developer to run the tool locally, commit the result, and push again.
+After pushing, the step **intentionally fails the build** so that the unfixed commit doesn't pass any quality gates downstream. The newly pushed commit triggers a fresh CI run, which succeeds because the fixes are now in place.
 
-Autofix CI closes that loop automatically:
-
-1. It detects any uncommitted file changes left by previous steps.
-2. It commits those changes under a bot identity and pushes them to the PR's source branch. The push triggers a new CI build on the fixed commit.
-3. It **intentionally fails the current build** so the unfixed commit doesn't pass any quality gates downstream.
-
-This means your PR author never has to manually run `prettier`, `ktlint`, or similar tools. The bot does it for them.
-
-### Typical workflow placement
+#### Typical workflow placement
 
 Place this step **after** any steps that may modify files (formatters, linters, generators) and **before** any steps that enforce quality gates (tests, lint checks). When the step finds changes to push, the build fails at this point and the quality gates run on the corrected commit in the next build.
 
-```
-┌─────────────────────────────────┐
-│  Git Clone                      │
-│  Run formatter / linter / gen   │
-│  Autofix CI  ◄── this step      │   ← fails here if fixes were needed
-│  Run tests                      │   ← only reached if no fixes needed
-│  Deploy / notify                │
-└─────────────────────────────────┘
-```
+#### How it works
 
-### What triggers a skip
+1. Detects changed files via `git status` (including untracked files by default)
+2. Aborts if any changed file is a Bitrise CI config (`bitrise.yml`, `bitrise.yaml`, `.bitrise/**`) to prevent privilege escalation
+3. Commits all changes using a bot identity (`Bitrise Autofix`)
+4. Pushes to the source branch (see **Authentication** below)
+5. Exits with failure so CI gates don't pass on the unfixed commit
+
+#### What triggers a skip
 
 The step exits successfully without doing anything in these cases:
 
-- **Not a PR build** — the `BITRISE_PULL_REQUEST` environment variable is not set. The step is designed for PR workflows; push builds are left untouched.
-- **Fork PR** — the PR source repository differs from the target repository. The step cannot push to a forked repository using the provided credentials.
-- **No changes detected** — there are no uncommitted modifications to commit.
+- **Not a PR build**: the `BITRISE_PULL_REQUEST` environment variable is not set. The step is designed for PR workflows; push builds are left untouched.
+- **Fork PR**: the PR source repository differs from the target repository. The step cannot push to a forked repository using the provided credentials.
+- **No changes detected**: there are no uncommitted modifications to commit.
 
-## Authentication
+#### Authentication
 
-The step supports both HTTPS and SSH remotes, matching however the preceding Git Clone step configured the repository.
+The step supports both HTTPS and SSH remotes — whichever the preceding Git Clone step configured.
 
-**HTTPS:** Supply a `git_token` (and optionally a `git_username`). Bitrise provides these automatically via `GIT_HTTP_PASSWORD` and `GIT_HTTP_USERNAME`, so the defaults work out of the box. Credentials are passed to `git push` through git's credential helper protocol — they are never written to disk or embedded in the remote URL.
+- **HTTPS**: The step uses the `git_token` (and optionally `git_username`) inputs to authenticate the push via git's credential helper protocol. Credentials are passed to the `git push` subprocess through environment variables and never written to disk or embedded in the remote URL.
+- **SSH**: If the repository was cloned over SSH and an SSH key is already loaded in the agent, the push uses SSH automatically. The `git_token` and `git_username` inputs are ignored for SSH remotes. Note that SSH deploy keys are typically read-only — if the push fails with a permission error, switch to HTTPS authentication using the `git_remote_url` and `git_token` inputs.
 
-**SSH:** If the repository was cloned over SSH and an SSH key is already loaded in the agent, the push uses SSH automatically. The `git_token` and `git_username` inputs are ignored. Note that SSH deploy keys are typically read-only — if the push fails with a permission error, switch to HTTPS authentication (see below).
+#### Security
 
-**Switching from SSH to HTTPS:** If your Git Clone step uses SSH but you want to authenticate pushes with a token, set `git_remote_url` to an HTTPS URL (e.g. `$BITRISEIO_BASE_REPOSITORY_URL`, which is the default) and provide a `git_token`. The step will rewrite the `origin` remote to the HTTPS URL before pushing.
+If any changed file is `bitrise.yml`, `bitrise.yaml`, or anything under `.bitrise/`, the step aborts with an error instead of committing. This prevents a malicious PR from using the autofix mechanism to sneak CI configuration changes through an auto-commit.
 
-## Security
+#### Outputs
 
-The step includes a guard against CI config tampering: if any changed file is `bitrise.yml`, `bitrise.yaml`, or anything under `.bitrise/`, the step aborts with an error instead of committing. This prevents a malicious PR from using the autofix mechanism to sneak CI configuration changes through an auto-commit.
+- `AUTOFIX_NEEDED`: `true` if uncommitted changes were detected
+- `AUTOFIX_PUSHED`: `true` if the autofix commit was pushed successfully
+- `AUTOFIX_FILE_COUNT`: number of files included in the autofix commit
 
-## Inputs
+</details>
 
-### `commit_subject`
+## 🧩 Get started
 
-**Default:** `Bitrise CI Autofix`
+Add this step directly to your workflow in the [Bitrise Workflow Editor](https://docs.bitrise.io/en/bitrise-ci/workflows-and-pipelines/steps/adding-steps-to-a-workflow.html).
 
-The subject line of the autofix commit. The step automatically appends a body listing the modified files and a link to this repository, so you don't need to include that in the subject.
+You can also run this step directly with [Bitrise CLI](https://github.com/bitrise-io/bitrise).
 
----
+## ⚙️ Configuration
 
-### `git_username`
+<details>
+<summary>Inputs</summary>
 
-**Default:** `$GIT_HTTP_USERNAME`
-**Category:** Authentication
-**Sensitive**
+| Key | Description | Flags | Default |
+| --- | --- | --- | --- |
+| `commit_subject` | Subject line of the autofix commit message. Additional context (changed files, step URL) is automatically appended as the commit body. | required | `Bitrise CI Autofix` |
+| `include_untracked` | When enabled (default), new files that are not yet tracked by git are included in the autofix commit. This is the right behavior for most cases, such as code generators and formatters that create new files.  When disabled, only modifications to already-tracked files are committed. Useful when the previous steps may create temporary or build output files that should not be committed.  | required | `true` |
+| `git_username` | Username for HTTPS git push authentication. Defaults to the Bitrise-provided HTTP username. Not used for SSH remotes. | sensitive | `$GIT_HTTP_USERNAME` |
+| `git_token` | Token or password for HTTPS git push authentication. Defaults to the Bitrise-provided HTTP password. Not used for SSH remotes. | sensitive | `$GIT_HTTP_PASSWORD` |
+| `git_remote_url` | When set, the step updates the `origin` remote to this URL before fetching and pushing. This allows overriding an SSH remote (set by the Git Clone step) with an HTTPS URL so that token-based authentication works.  Defaults to `$BITRISEIO_BASE_REPOSITORY_URL`, the HTTPS URL of the base repository provided by Bitrise. Leave empty to use the remote URL already configured in the local git repository.  **SSH vs HTTPS:** SSH deploy keys are typically read-only, so a push over SSH will fail with a permission error. Switching to HTTPS with a `git_token` is usually the right fix: keep this input at its default HTTPS value and set `git_token` to a token with write access.  |  | `$BITRISEIO_BASE_REPOSITORY_URL` |
+| `dry_run` | When enabled, the step detects changes, runs security checks, and creates a local commit — but skips the `git push`.  The step exits with success (instead of the usual intentional failure) so the build is not affected.  Note: `AUTOFIX_PUSHED` will always be `false` in dry run mode.  | required | `false` |
+| `verbose` | Enable logging additional information for troubleshooting. | required | `false` |
+</details>
 
-Username for HTTPS git push authentication. Bitrise populates `GIT_HTTP_USERNAME` automatically for most repository integrations, so the default works without any configuration. Not used for SSH remotes.
+<details>
+<summary>Outputs</summary>
 
----
+| Environment Variable | Description |
+| --- | --- |
+| `AUTOFIX_NEEDED` | Whether uncommitted changes were detected. `true` or `false`. |
+| `AUTOFIX_PUSHED` | Whether the autofix commit was successfully pushed. `true` or `false`. |
+| `AUTOFIX_FILE_COUNT` | Number of files included in the autofix commit. |
+</details>
 
-### `git_token`
+## 🙋 Contributing
 
-**Default:** `$GIT_HTTP_PASSWORD`
-**Category:** Authentication
-**Sensitive**
+We welcome [pull requests](https://github.com/bitrise-steplib/bitrise-step-autofix-ci/pulls) and [issues](https://github.com/bitrise-steplib/bitrise-step-autofix-ci/issues) against this repository.
 
-Token or password for HTTPS git push authentication. Bitrise populates `GIT_HTTP_PASSWORD` automatically, so the default works without any configuration. Not used for SSH remotes.
+For pull requests, work on your changes in a forked repository and use the Bitrise CLI to [run step tests locally](https://docs.bitrise.io/en/bitrise-ci/bitrise-cli/running-your-first-local-build-with-the-cli.html).
 
----
+Learn more about developing steps:
 
-### `git_remote_url`
-
-**Default:** `$BITRISEIO_BASE_REPOSITORY_URL`
-**Category:** Authentication
-
-Overrides the `origin` remote URL before fetching and pushing. Leave empty to use whatever URL the preceding Git Clone step configured.
-
-The main use case is switching from SSH to HTTPS authentication: if Git Clone used an SSH remote, set this input to the HTTPS URL of the repository (the default `$BITRISEIO_BASE_REPOSITORY_URL` is usually correct) and provide a `git_token`. The step rewrites the remote to HTTPS so that token-based authentication works.
-
----
-
-### `include_untracked`
-
-**Default:** `true`
-**Values:** `true` | `false`
-
-Controls whether new files that are not yet tracked by git are included in the autofix commit.
-
-- `true` (default): All new and modified files are committed. This is the right choice for most use cases, including code generators that create new files.
-- `false`: Only modifications to already-tracked files are committed. Use this if previous steps might create temporary files or build artifacts that should not end up in the repository.
-
----
-
-### `dry_run`
-
-**Default:** `false`
-**Values:** `true` | `false`
-**Category:** Debug
-
-When enabled, the step runs all detection and security checks and creates a local commit, but skips the `git push`. The build exits with success rather than the usual intentional failure.
-
-Use this to verify the step's behavior without affecting your repository. Note that `AUTOFIX_PUSHED` is always `false` in dry run mode.
-
----
-
-### `verbose`
-
-**Default:** `false`
-**Values:** `true` | `false`
-**Category:** Debug
-
-Enables additional log output for troubleshooting. Useful when diagnosing why the step is or isn't detecting changes, or investigating authentication issues.
-
-## Outputs
-
-### `AUTOFIX_NEEDED`
-
-`true` if uncommitted changes were detected, `false` otherwise. Set regardless of whether the push succeeded.
-
-### `AUTOFIX_PUSHED`
-
-`true` if the autofix commit was successfully pushed to the remote. `false` when no changes were found, when the build was skipped, or when running in dry run mode.
-
-### `AUTOFIX_FILE_COUNT`
-
-The number of files included in the autofix commit. `0` when no changes were found or the step was skipped.
+- [Create your own step](https://docs.bitrise.io/en/bitrise-ci/workflows-and-pipelines/developing-your-own-bitrise-step/developing-a-new-step.html)

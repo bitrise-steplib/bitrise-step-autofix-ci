@@ -92,11 +92,14 @@ func setCommonEnvs(t *testing.T, r gitRepo) {
 	t.Helper()
 	t.Setenv("git_token", "dummy")
 	t.Setenv("commit_subject", "Test Autofix")
+	t.Setenv("include_untracked", "true")
 	t.Setenv("dry_run", "false")
 	t.Setenv("verbose", "false")
 	t.Setenv("BITRISE_GIT_BRANCH", "main")
 	t.Setenv("BITRISE_PULL_REQUEST", "123")
 	t.Setenv("GIT_REPOSITORY_URL", "file://"+r.remoteDir)
+	t.Setenv("BITRISEIO_PULL_REQUEST_REPOSITORY_URL", "file://"+r.remoteDir)
+	t.Setenv("BITRISEIO_BASE_REPOSITORY_URL", "file://"+r.remoteDir)
 }
 
 // runStep changes the working directory to workdir for the duration of the test
