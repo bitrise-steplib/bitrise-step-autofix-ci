@@ -1,6 +1,7 @@
 package step
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/bitrise-io/go-utils/v2/log"
@@ -76,7 +77,7 @@ func Test_gitPush_UsesCredentialHelper(t *testing.T) {
 		envRepo:        fakeEnvRepo{},
 	}
 
-	err := s.gitPush("myuser", "mytoken", "main")
+	err := s.gitPush("myuser", "mytoken", "main", false)
 	require.NoError(t, err)
 
 	pushCall, ok := factory.findCall("push")
@@ -88,6 +89,39 @@ func Test_gitPush_UsesCredentialHelper(t *testing.T) {
 	assert.True(t, envContainsPrefix(pushCall.opts.Env, "GIT_HELPER_TOKEN="), "GIT_HELPER_TOKEN missing from push env")
 }
 
+func Test_gitPush_DryRun_AddsDryRunFlag(t *testing.T) {
+	factory := &fakeCommandFactory{}
+	s := Step{
+		commandFactory: factory,
+		logger:         log.NewLogger(),
+		envRepo:        fakeEnvRepo{},
+	}
+
+	err := s.gitPush("myuser", "mytoken", "main", true)
+	require.NoError(t, err)
+
+	pushCall, ok := factory.findCall("push")
+	require.True(t, ok, "no git push command was recorded")
+
+	assert.Contains(t, pushCall.args, "--dry-run", "git push args should include --dry-run: %v", pushCall.args)
+}
+
+func Test_gitPush_DryRun_ReturnsErrorOnFailure(t *testing.T) {
+	factory := &fakeCommandFactory{
+		errors: map[string]error{
+			"push": errors.New("remote: Permission to org/repo.git denied"),
+		},
+	}
+	s := Step{
+		commandFactory: factory,
+		logger:         log.NewLogger(),
+		envRepo:        fakeEnvRepo{},
+	}
+
+	err := s.gitPush("myuser", "mytoken", "main", true)
+	require.Error(t, err, "a failing dry-run push must surface as an error")
+}
+
 func Test_gitPush_NoCredentialHelper_SSH(t *testing.T) {
 	factory := &fakeCommandFactory{}
 	s := Step{
@@ -96,7 +130,7 @@ func Test_gitPush_NoCredentialHelper_SSH(t *testing.T) {
 		envRepo:        fakeEnvRepo{},
 	}
 
-	err := s.gitPush("", "", "main")
+	err := s.gitPush("", "", "main", false)
 	require.NoError(t, err)
 
 	pushCall, ok := factory.findCall("push")
@@ -118,7 +152,7 @@ func Test_isGitHubAppPermissionDenied(t *testing.T) {
 			name: "GitHub App permission denied",
 			// Copied from a real Bitrise build failure.
 			output: "remote: Permission to ofalvai/bitrise-step-autofix-ci.git denied to bitrise[bot].\nfatal: unable to access 'https://github.com/ofalvai/bitrise-step-autofix-ci.git/': The requested URL returned error: 403",
-			want:  true,
+			want:   true,
 		},
 		{
 			name:   "unrelated push failure",
