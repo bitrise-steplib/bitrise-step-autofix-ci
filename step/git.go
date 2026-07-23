@@ -142,10 +142,15 @@ func (s Step) gitCommit(message string) error {
 	return nil
 }
 
-func (s Step) gitPush(username, token, branch string) error {
+func (s Step) gitPush(username, token, branch string, dryRun bool) error {
 	s.logger.Debugf("$ git push origin HEAD:%s", branch)
 
-	var pushArgs []string
+	pushArgs := []string{"push"}
+	if dryRun {
+		pushArgs = append(pushArgs, "--dry-run")
+	}
+	pushArgs = append(pushArgs, "origin", fmt.Sprintf("HEAD:%s", branch))
+
 	var pushOpts *command.Opts
 	if token != "" {
 		helper, err := gitcredential.WriteHelper(username, token)
@@ -153,10 +158,8 @@ func (s Step) gitPush(username, token, branch string) error {
 			return err
 		}
 		defer os.Remove(helper.Path)
-		pushArgs = []string{"-c", fmt.Sprintf("credential.helper=%s", helper.Path), "push", "origin", fmt.Sprintf("HEAD:%s", branch)}
+		pushArgs = append([]string{"-c", fmt.Sprintf("credential.helper=%s", helper.Path)}, pushArgs...)
 		pushOpts = &command.Opts{Env: helper.Env}
-	} else {
-		pushArgs = []string{"push", "origin", fmt.Sprintf("HEAD:%s", branch)}
 	}
 
 	cmd := s.commandFactory.Create("git", pushArgs, pushOpts)

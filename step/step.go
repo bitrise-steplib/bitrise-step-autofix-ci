@@ -141,7 +141,10 @@ func (s Step) Run() (Result, error) {
 
 	if input.DryRun {
 		s.logger.Println()
-		s.logger.Infof("Dry run: skipping git push. The commit was created locally but not pushed.")
+		s.logger.Infof("Dry run: validating the push without applying it (git push --dry-run). The commit was created locally but not pushed.")
+		if err := s.gitPush(input.GitUsername, input.GitToken, gitBranch, true); err != nil {
+			return Result{AutofixNeeded: true, DryRun: true}, fmt.Errorf("dry run: push would fail: %w", err)
+		}
 		return Result{
 			AutofixNeeded: true,
 			AutofixPushed: false,
@@ -150,7 +153,7 @@ func (s Step) Run() (Result, error) {
 		}, nil
 	}
 
-	if err := s.gitPush(input.GitUsername, input.GitToken, gitBranch); err != nil {
+	if err := s.gitPush(input.GitUsername, input.GitToken, gitBranch, false); err != nil {
 		return Result{AutofixNeeded: true}, fmt.Errorf("git push: %w", err)
 	}
 

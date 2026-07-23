@@ -96,9 +96,9 @@ inputs:
     title: Dry run
     summary: Run the full step logic without pushing to the remote. Useful for testing.
     description: |
-      When enabled, the step detects changes, runs security checks, and creates a local commit — but skips the `git push`.
+      When enabled, the step detects changes, runs security checks, and creates a local commit, then validates the push with `git push --dry-run` instead of performing a real `git push`.
 
-      The step exits with success (instead of the usual intentional failure) so the build is not affected.
+      If the dry-run push indicates that a real push would fail (e.g. authentication error, non-fast-forward), the step fails. Otherwise it exits with success (instead of the usual intentional failure) so the build is not affected.
 
       Note: `AUTOFIX_PUSHED` will always be `false` in dry run mode.
     category: Debug
